@@ -131,8 +131,7 @@ public class MainActivity extends Activity {
     private boolean shelf;   // Shelf layout: agents as a hero row, apps on a glass shelf; else the grid
     private HeroRow hero;    // the agents row, Shelf only
     private TextView stats;  // the line under the Shelf title
-    private FrameLayout dock; // the glass shelf, Shelf only
-    private boolean dockShown;
+    private boolean dockShown; // the apps have played their entrance
     private static final String INPUTS = "inputs";
     private int fg = Color.WHITE, fgSoft = 0xE0FFFFFF, fgDim = 0xA8FFFFFF, fill = 0x13FFFFFF, fillOn = 0x38FFFFFF,
             edge = 0x17FFFFFF, panelBg = 0xFF161113, dropBg = 0xFF231D1F;
@@ -302,6 +301,14 @@ public class MainActivity extends Activity {
         if (intent.getBooleanExtra("demo", false))
             try { startForegroundService(new Intent(this, WatchService.class).putExtra("demo", true)); } catch (Exception ignored) {}
         if (saveConfig(intent)) buildTiles();
+        // Home pressed while Home is already in front: back to the start, like any TV home screen.
+        else if (intent.hasCategory(Intent.CATEGORY_HOME) && hasWindowFocus() && movingKey == null && !rowApps.isEmpty()) {
+            View first = tile(rowApps.get(0));
+            if (first != null) first.requestFocus();
+            if (hero != null) hero.smoothScrollTo(0, 0);
+            View page = (View) root.getParent();
+            if (page instanceof ScrollView) ((ScrollView) page).smoothScrollTo(0, 0);
+        }
     }
 
     // Saves an app list passed with --es apps "..." and shortcuts passed with --es quick "...".
@@ -533,7 +540,7 @@ public class MainActivity extends Activity {
     }
 
     // Shelf layout geometry, at 1920x1080.
-    private static final int SHELF_PAD = 28, SHELF_GAP = 24, SHELF_BOTTOM = 56, HERO_TOP = 380;
+    private static final int SHELF_COLS = 4, HERO_TOP = 228, APPS_TOP = 486, APPS_ROW_GAP = 76;
 
     private void showBackground() {
         if (theme.classic) showWallpaper(wallpaper());
@@ -620,40 +627,19 @@ public class MainActivity extends Activity {
         }
     }
 
-    // Shelf layout: the apps on one glass shelf at the bottom, the inputs and settings as icons at the
-    // top right. One row, sized so up to eight apps fit without scrolling.
+    // Shelf layout: the apps large, four to a row (they are what people use most, so they get the most
+    // room), under a slim strip of agents; the inputs and settings as icons at the top right.
     private void buildShelf(String want, int wantAt) {
         PackageManager pm = getPackageManager();
-        int screenW = getResources().getDisplayMetrics().widthPixels, screenH = getResources().getDisplayMetrics().heightPixels;
+        int screenW = getResources().getDisplayMetrics().widthPixels;
         List<String> apps = appList(pm);
-        int n = 0;
-        for (String pkg : apps) if (launchIntent(pm, pkg) != null) n++;
-        int dockX = px(48), dockW = screenW - 2 * dockX, inner = dockW - 2 * px(SHELF_PAD);
-        int w = Math.max(px(180), Math.min(px(250), (inner - px(SHELF_GAP) * (Math.max(1, n) - 1)) / Math.max(1, n)));
+        int w = (screenW - 2 * px(MARGIN) - (SHELF_COLS - 1) * px(GAP)) / SHELF_COLS;
         int h = w * 9 / 16;
         tileW = w;
         tileH = h;
-        int dockH = h + 2 * px(SHELF_PAD), dockY = screenH - px(SHELF_BOTTOM) - dockH;
-
-        if (dock != null) root.removeView(dock);
-        dock = new FrameLayout(this);
-        dock.setClipChildren(false);
-        GradientDrawable glass = new GradientDrawable();
-        glass.setCornerRadius(px(44));
-        glass.setColor(solid(theme.surface, 0xCC, 0.9f));
-        glass.setStroke(Math.max(1, px(2)), edge);
-        dock.setBackground(glass);
-        root.addView(dock, at(dockX, dockY, dockW, dockH));
-        // The shelf rises into place the first time the page shows.
-        if (!dockShown) {
-            dockShown = true;
-            dock.setAlpha(0f);
-            dock.setTranslationY(px(48));
-            dock.animate().alpha(1f).translationY(0).setStartDelay(180).setDuration(420)
-                    .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
-        }
-        ((FrameLayout.LayoutParams) moveHint.getLayoutParams()).topMargin = dockY - px(52);
-        root.setMinimumHeight(screenH);
+        int rows = Math.max(1, (apps.size() + SHELF_COLS - 1) / SHELF_COLS);
+        ((FrameLayout.LayoutParams) moveHint.getLayoutParams()).topMargin = px(APPS_TOP) - px(52);
+        root.setMinimumHeight(gridY(rows - 1) + h + px(64));
 
         for (String pkg : apps) {
             Intent li = launchIntent(pm, pkg);
@@ -668,7 +654,18 @@ public class MainActivity extends Activity {
             if (banner == null) try { icon = pm.getApplicationIcon(pkg); } catch (Exception ignored) {}
             int i = rowApps.size();
             rowApps.add(pkg);
-            addTile(dock, pkg, label, banner, null, icon, gridX(i), gridY(i), w, h);
+            addTile(root, pkg, label, banner, null, icon, gridX(i), gridY(i), w, h);
+        }
+        // The first time the page shows, the apps rise into place, a row at a time.
+        if (!dockShown) {
+            dockShown = true;
+            for (int i = 0; i < rowApps.size(); i++) {
+                View wrap = (View) tile(rowApps.get(i)).getParent();
+                wrap.setAlpha(0f);
+                wrap.setTranslationY(px(36));
+                wrap.animate().alpha(1f).translationY(0).setStartDelay(160 + (i / SHELF_COLS) * 90L + (i % SHELF_COLS) * 30L)
+                        .setDuration(380).setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+            }
         }
 
         int ib = px(ICON_BUTTON), ig = px(ICON_GAP);
@@ -1351,12 +1348,12 @@ public class MainActivity extends Activity {
 
     // Where app number i sits in the grid.
     private int gridX(int i) {
-        if (shelf) return px(SHELF_PAD) + i * (tileW + px(SHELF_GAP));
+        if (shelf) return px(MARGIN) + (i % SHELF_COLS) * (tileW + px(GAP));
         return px(MARGIN) + (i % PER_ROW) * (tileW + px(GAP));
     }
 
     private int gridY(int i) {
-        if (shelf) return px(SHELF_PAD);
+        if (shelf) return px(APPS_TOP) + (i / SHELF_COLS) * (tileH + px(APPS_ROW_GAP));
         return gridTop + (i / PER_ROW) * px(ROW_STEP);
     }
 
@@ -1379,8 +1376,9 @@ public class MainActivity extends Activity {
     }
 
     private boolean moveKey(String key, int code, boolean ok, boolean down) {
+        int cols = shelf ? SHELF_COLS : PER_ROW;
         int step = code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1
-                : code == KeyEvent.KEYCODE_DPAD_UP ? -PER_ROW : code == KeyEvent.KEYCODE_DPAD_DOWN ? PER_ROW : 0;
+                : code == KeyEvent.KEYCODE_DPAD_UP ? -cols : code == KeyEvent.KEYCODE_DPAD_DOWN ? cols : 0;
         if (step != 0) {
             int from = rowApps.indexOf(key), to = from + step;
             if (down && to >= 0 && to < rowApps.size()) {

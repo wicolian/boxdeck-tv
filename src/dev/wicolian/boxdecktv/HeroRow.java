@@ -32,7 +32,7 @@ import java.util.List;
 // blinks. OK on a card opens every pane (DeckActivity). Polls every 20 seconds while Home is in front.
 final class HeroRow extends HorizontalScrollView {
     private static final int POLL_MS = 20000, MAX_CARDS = 8;
-    private static final int CARD_W = 540, CARD_H = 250, GAP = 32, RADIUS = 26;
+    private static final int CARD_W = 408, GAP = 32;
 
     private final SharedPreferences prefs;
     private final Theme theme;
@@ -160,10 +160,8 @@ final class HeroRow extends HorizontalScrollView {
         View restore = null;
         for (int i = 0; i < Math.min(MAX_CARDS, panes.size()); i++) {
             Deck.Agent a = panes.get(i);
-            String model = a.model == null || a.model.isEmpty() ? a.kind : a.model.replace("claude-", "");
-            View card = card(a.key, a.waiting(), a.waiting() ? "Waiting for you" : "Working", Deck.age(a.secs),
-                    a.title != null && !a.title.isEmpty() ? a.title : a.kind,
-                    a.box + "  ·  " + model + "  ·  " + shortCwd(a.cwd));
+            View card = card(a.key, a.waiting(), false, a.waiting() ? "Waiting" : "Working", a.box, Deck.age(a.secs),
+                    a.title != null && !a.title.isEmpty() ? a.title : a.kind + " \u00B7 " + AgentCard.model(a));
             row.addView(card);
             if (a.key.equals(focused)) restore = card.findViewWithTag(a.key);
         }
@@ -177,7 +175,7 @@ final class HeroRow extends HorizontalScrollView {
         shownKeys = "";
         boolean hadFocus = findFocus() != null;
         clearRow();
-        View card = card("empty", false, label, "", title, meta);
+        View card = card("empty", false, true, label, "", "", meta.isEmpty() ? title : title + " \u2014 " + meta);
         row.addView(card);
         enter();
         if (hadFocus) card.findViewWithTag("empty").requestFocus();
@@ -211,76 +209,20 @@ final class HeroRow extends HorizontalScrollView {
         }).start();
     }
 
-    private View card(String key, boolean waiting, String status, String age, String title, String meta) {
-        boolean empty = "empty".equals(key);
-        int tone = empty ? fgDim : waiting ? theme.warn : theme.accent;
-
-        // The wrapper keeps room for the focus zoom, so neighbours never overlap.
-        FrameLayout wrap = new FrameLayout(getContext());
-        wrap.setClipChildren(false);
-        LinearLayout.LayoutParams wp = new LinearLayout.LayoutParams(px(empty ? 1100 : CARD_W), px(CARD_H));
-        wp.rightMargin = px(GAP);
-        wrap.setLayoutParams(wp);
-
-        LinearLayout card = new LinearLayout(getContext());
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(px(30), px(28), px(30), px(26));
-        // Solid colours only (see MainActivity.solid): the surface as it would look over the canvas,
-        // and for a waiting card a warm tint from its top left, as one cheap linear gradient.
-        int under = Theme.blend(theme.bg, android.graphics.Color.BLACK, 0.18f);
-        int surface = Theme.blend(under, theme.surface, 0.95f) | 0xFF000000;
-        final GradientDrawable face = waiting
-                ? new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[] {Theme.blend(surface, theme.warn, 0.12f), surface, surface})
-                : new GradientDrawable();
-        if (!waiting) face.setColor(surface);
-        face.setCornerRadius(px(RADIUS));
-        face.setStroke(Math.max(1, px(2)), Theme.blend(surface, theme.fg, 0.08f));
-        card.setBackground(face);
-
-        // Status row: the light, the word, and the age on the right.
-        LinearLayout top = new LinearLayout(getContext());
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        View led = new View(getContext());
-        GradientDrawable dot = new GradientDrawable();
-        dot.setShape(GradientDrawable.OVAL);
-        dot.setColor(tone);
-        led.setBackground(dot);
-        top.addView(led, new LinearLayout.LayoutParams(px(14), px(14)));
-        if (!empty && !waiting) breathe(led);
-        TextView st = text(px(22), tone, bold);
-        st.setText(status);
-        LinearLayout.LayoutParams stp = new LinearLayout.LayoutParams(0, -2, 1f);
-        stp.leftMargin = px(14);
-        top.addView(st, stp);
-        if (!age.isEmpty()) {
-            TextView ag = text(px(22), fgDim, regular);
-            ag.setText(age);
-            ag.setFontFeatureSettings("tnum");
-            top.addView(ag);
-        }
-        card.addView(top);
-
-        TextView t = text(px(32), theme.fg, bold);
-        t.setText(title);
-        t.setMaxLines(2);
-        t.setEllipsize(TextUtils.TruncateAt.END);
-        t.setLineSpacing(px(4), 1f);
-        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        tp.topMargin = px(22);
-        card.addView(t, tp);
-
-        TextView m = text(px(21), fgDim, regular);
-        m.setText(meta);
-        m.setSingleLine(true);
-        m.setEllipsize(TextUtils.TruncateAt.END);
-        card.addView(m, new LinearLayout.LayoutParams(-1, -2));
-
-        card.setFocusable(true);
-        card.setTag(key);
-        card.setOnFocusChangeListener((v, has) -> {
-            face.setStroke(Math.max(1, px(has ? 4 : 2)), has ? theme.accent : Theme.blend(surface, theme.fg, 0.08f));
-            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f)
-                    .setDuration(220).setInterpolator(new DecelerateInterpolator(1.6f)).start();
+    // A compact card (AgentCard), 408 wide so four fit across with the gaps; more scroll.
+    private View card(String key, boolean waiting, boolean empty, String status, String box, String age, String title) {
+        FrameLayout wrap = AgentCard.make(getContext(), theme, regular, bold, scale, empty ? 1100 : CARD_W, key, waiting, empty,
+                status, box, age, title, breathing, () -> {
+                    if (!Deck.configured(prefs)) return;
+                    getContext().startActivity(new Intent(getContext(), DeckActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.rightMargin = px(GAP);
+        wrap.setLayoutParams(lp);
+        View face = wrap.getChildAt(0);
+        View.OnFocusChangeListener zoom = face.getOnFocusChangeListener();
+        face.setOnFocusChangeListener((v, has) -> {
+            zoom.onFocusChange(v, has);
             if (has) wrap.post(() -> {
                 // Keep the focused card in view, with a little of the next one showing.
                 int[] at = new int[2];
@@ -289,11 +231,6 @@ final class HeroRow extends HorizontalScrollView {
                     smoothScrollTo(Math.max(0, wrap.getLeft() - px(96)), 0);
             });
         });
-        card.setOnClickListener(v -> {
-            if (!Deck.configured(prefs)) return;
-            getContext().startActivity(new Intent(getContext(), DeckActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        });
-        wrap.addView(card, new FrameLayout.LayoutParams(-1, -1));
         return wrap;
     }
 

@@ -9,7 +9,8 @@ Codex agents are working and which ones stopped and want you, on every machine
 ## What you get
 
 - **A calm home screen.** A headline answers the one question: *does anything need me?* ("1 agent needs
-  you"). Under it are your agents as cards, waiting first, and your apps on a shelf at the bottom. No
+  you"). Under it is a slim strip of agent cards, waiting first. Your apps get most of the screen as
+  large logos, four to a row. No
   ads, no suggestion rows. App logos keep their own colours, because that is how you find an app from
   across the room.
 - **A status light on every card,** like the LEDs on a router. Amber and steady when an agent waits
@@ -25,8 +26,9 @@ Codex agents are working and which ones stopped and want you, on every machine
   screen. To get there it uses no live blur, and it paints the background once instead of every frame.
   The surfaces are solid colours mixed to look like glass, and the only constant motion is the
   breathing light, at 15 fps.
-- **Every herdr pane, full screen.** Press OK on any card. Each pane shows its title, folder, model and
-  age, waiting first. Agents outside herdr have no status, so they fold into one line per machine.
+- **Every herdr pane, full screen.** Press OK on any card. You get the same cards in a grid, grouped by
+  machine, waiting first. Agents outside herdr have no status, so they fold into one line per machine.
+  Pressing Home from anywhere brings you back to the first app.
 
   ![Panes](docs/panes.png)
 

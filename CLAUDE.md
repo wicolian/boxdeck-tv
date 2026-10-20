@@ -39,8 +39,9 @@ adb connect <ip>:<port> && adb -s <ip>:<port> tcpip 5555 && adb connect <ip>:555
 - **`Theme`** holds 12 palettes (Omarchy's themes, Terminal, Classic, and an optional Custom) and the
   fonts: Inter by default, JetBrains Mono when chosen or for Terminal, both bundled in `assets/fonts`.
   Every screen reads `Theme.current(prefs)`. `accent` means focus or running; `warn` means it wants you.
-- **Two layouts.** Shelf (`HeroRow` with a headline and agent cards, apps on a solid "glass" dock, and
-  icons for inputs, settings and network) is the default. Grid is the original tv-detox layout. The
+- **Two layouts.** Shelf is the default: a headline, `HeroRow` (a strip of compact `AgentCard`s), apps
+  as large tiles four to a row, and icons for inputs, settings and network. `AgentCard` is the one card
+  for an agent, shared by `HeroRow` and `DeckActivity`. Grid is the original tv-detox layout. The
   `layout` pref picks one, and Classic is always Grid.
 - **`MainActivity`** is the home screen, adapted from tv-detox:
   - App tiles, HDMI inputs, editing, and wallpapers.
