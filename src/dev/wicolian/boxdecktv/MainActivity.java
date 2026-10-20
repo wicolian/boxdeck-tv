@@ -129,16 +129,10 @@ public class MainActivity extends Activity {
     private boolean term;
     private int fg = Color.WHITE, fgSoft = 0xE0FFFFFF, fgDim = 0xA8FFFFFF, fill = 0x13FFFFFF, fillOn = 0x38FFFFFF,
             edge = 0x17FFFFFF, panelBg = 0xFF161113, dropBg = 0xFF231D1F;
-    private TextView cursor; // the blinking block after the time, Terminal only
+    private TextView cursor; // the solid block after the time, Terminal only. It does not blink: on a
+    // screen people watch for hours, a blink is a distraction, not a detail.
     private AgentsPanel agents; // boxdeck glance, when set up
     private boolean shownOnce;
-    private final Runnable blink = new Runnable() {
-        @Override public void run() {
-            if (cursor == null) return;
-            cursor.setVisibility(cursor.getVisibility() == View.VISIBLE ? View.INVISIBLE : View.VISIBLE);
-            cursor.postDelayed(this, 530);
-        }
-    };
 
     private FrameLayout root; // the page, inside a vertical scroller
     private int tileW, tileH, gridTop; // app grid geometry, set by buildTiles
@@ -283,6 +277,9 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        // --ez demo true  shows a sample of the watcher's toasts (the service itself is not exported).
+        if (intent.getBooleanExtra("demo", false))
+            try { startForegroundService(new Intent(this, WatchService.class).putExtra("demo", true)); } catch (Exception ignored) {}
         if (saveConfig(intent)) buildTiles();
     }
 
@@ -379,13 +376,11 @@ public class MainActivity extends Activity {
         // The first time Home shows (after a restart too), start on the first app, whatever Android picked.
         if ((f == null || !shownOnce) && !tiles.isEmpty()) tiles.get(0).requestFocus();
         shownOnce = true;
-        if (cursor != null) { cursor.removeCallbacks(blink); cursor.postDelayed(blink, 530); }
         if (agents != null) agents.start();
     }
 
     @Override
     protected void onPause() {
-        if (cursor != null) cursor.removeCallbacks(blink);
         if (agents != null) agents.stop();
         super.onPause();
     }

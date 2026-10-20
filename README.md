@@ -19,12 +19,23 @@ Codex agents are working and which ones stopped and want you, on every machine
 
   ![Panes](docs/panes.png)
 
-- **"Needs you" toasts.** When a pane goes from working to waiting, the TV shows a toast for a few
-  seconds, even during Netflix. The first read after a restart only learns the state, so a reboot
-  never floods the screen.
-- **A terminal look** (the `Terminal` wallpaper): shell prompt, block cursor, monospace text and faint
+- **Toasts, only when something changes.** They show even during Netflix: a pane goes from working to
+  waiting, a machine goes offline, one of your PRs starts failing CI, a Claude quota window drops under
+  20% left, or a disk goes over 90%. Android cuts a toast at two lines, so you get the most urgent line
+  and a count of the rest. The first read after a restart only learns the state, so a reboot never
+  floods the screen.
+- **"While you were away".** Turn the TV on after 30 minutes or more and the first thing you see is
+  `While you were away: 3 finished · 1 needs you · ~$40 spent`.
+- **PR and CI line** in the panel: `prs 9 open · ✕ 1 failing · 1 pending`. boxdeck fetches it with the
+  hub's own `gh` login ([boxdeck#52](https://github.com/wicolian/boxdeck/pull/52)), so the TV never holds
+  a GitHub token. The line is hidden when the hub has no `gh`.
+- **A terminal look** (the `Terminal` wallpaper): shell prompt, a solid block cursor, monospace text and faint
   scanlines. There are 14 other wallpapers under Settings > Wallpaper.
-- **A Matrix screensaver** with a small clock, drawn at half resolution so a slow TV keeps up.
+- **A Matrix screensaver** with the clock and, above it, your agents (`◐ 4 waiting · ● 2 working`) and
+  usage (`claude 5h 86% left · 7d 63% left · ~$689 today`), on a dark plate so the rain never hides
+  them. It is drawn at half resolution so a slow TV keeps up.
+
+  ![Screensaver](docs/screensaver.png)
 - **It stays reachable after a restart.** Google TV turns wireless debugging off at every boot, and
   Tailscale does not reconnect by itself. The watcher turns both back on.
 
@@ -40,8 +51,8 @@ You need a TV running Android TV or Google TV with developer mode, `adb`, Java 1
    boxdeck token new --read-only tv
    ```
 
-   A read-only token (`bdr_...`) can only read `/api/boxes`, `/api/agents`, `/api/usage` and
-   `/api/health`. **Never put a full token (`bd_...`) on a TV.** A full token can run commands on the
+   A read-only token (`bdr_...`) can only read `/api/boxes`, `/api/agents`, `/api/usage`,
+   `/api/github` and `/api/health`. **Never put a full token (`bd_...`) on a TV.** A full token can run commands on the
    machine through `/api/run`.
 3. **Build and install.**
 

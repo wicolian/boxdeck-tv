@@ -32,7 +32,7 @@ public class DeckActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private LinearLayout list;
     private TextView stamp;
-    private boolean term, running;
+    private boolean term, running, eased;
     private int fg, fgSoft, fgDim, fillOn;
     private Typeface regular, bold;
     private float scale;
@@ -163,6 +163,18 @@ public class DeckActivity extends Activity {
                 LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(-1, -2);
                 op.topMargin = px(10);
                 list.addView(t, op);
+            }
+        }
+        // The first time the list fills, rows ease in from just below, a few milliseconds apart, so the
+        // eye reads them top down. Later refreshes swap in place.
+        if (!eased) {
+            eased = true;
+            for (int i = 0; i < list.getChildCount(); i++) {
+                View v = list.getChildAt(i);
+                v.setAlpha(0f);
+                v.setTranslationY(px(10));
+                v.animate().alpha(1f).translationY(0).setStartDelay(Math.min(i, 12) * 22L).setDuration(220)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
             }
         }
         if (restore != null) restore.requestFocus();

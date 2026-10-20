@@ -17,18 +17,17 @@ import android.widget.TextView;
 
 import org.json.JSONObject;
 
-import java.util.List;
-
-// A glance at every machine boxdeck knows, one block each, right of the clock:
+// A glance at every machine boxdeck knows, right of the clock. At most five lines:
 //
-//   $ boxdeck status
-//   box   ● 2 working   ◐ 4 waiting   6 other
-//   mac   ● 1 working
+//   $ boxdeck status · ~$674 today
+//   box   ● 2 working   ◐ 4 waiting   6 outside herdr
+//   mac   ● 1 working   disk 92%
 //   claude 5h ████████░░ 78% left · 7d 64% left
-//   ~$652 today (list price)
+//   prs 5 open · ✕ 2 failing · 1 pending
 //
-// "waiting" is idle + done: an agent that stopped and wants you, so it is the only figure in the warning
-// colour. OK on the panel opens every herdr pane (DeckActivity). Off until boxdeck is set up:
+// Amber (WAITING) is only for something to act on: an agent waiting, a machine down, a full disk,
+// quota under 20%, failing CI. Everything else is green or dim. OK opens every herdr pane
+// (DeckActivity). Off until boxdeck is set up:
 //   am start -n dev.wicolian.boxdecktv/.MainActivity --es boxdeck_url http://100.x.y.z:8100 --es boxdeck_token bdr_...
 // Polls every 20 seconds while Home is in front, nothing else.
 final class AgentsPanel extends LinearLayout {
@@ -38,7 +37,8 @@ final class AgentsPanel extends LinearLayout {
     private final SharedPreferences prefs;
     private final int fg, fgSoft, fgDim, textPx;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final TextView body;
+    private final TextView head, body;
+    private String cost = "";
     private boolean running;
     private Thread worker;
 
@@ -53,16 +53,16 @@ final class AgentsPanel extends LinearLayout {
         setOrientation(VERTICAL);
         setGravity(Gravity.END);
         setPadding(textPx, textPx * 2 / 3, textPx, textPx * 2 / 3);
-        TextView head = line(fgDim, regular);
-        head.setText("$ boxdeck status");
+        head = line(fgDim, regular);
         body = line(fgSoft, regular);
         body.setLineSpacing(textPx * 0.25f, 1f);
         addView(head);
         LayoutParams lp = new LayoutParams(-2, -2);
         lp.topMargin = textPx / 2;
         addView(body, lp);
+        showHead(false);
 
-        // Focusable like a tile: a quiet fill and a "> panes_" hint when focused, OK opens the panes.
+        // Focusable like a tile: a quiet fill and a "> open panes_" hint when focused; OK opens them.
         final GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(radius);
         bg.setColor(0);
@@ -71,11 +71,15 @@ final class AgentsPanel extends LinearLayout {
         setClickable(true);
         setOnFocusChangeListener((v, has) -> {
             bg.setColor(has ? focusFill : 0);
-            head.setText(has ? "$ boxdeck status   > open panes_" : "$ boxdeck status");
-            head.setTextColor(has ? fg : fgDim);
+            showHead(has);
         });
         setOnClickListener(v -> getContext().startActivity(
                 new Intent(getContext(), DeckActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+    }
+
+    private void showHead(boolean focused) {
+        head.setText((focused ? "> open panes_" : "$ boxdeck status") + cost);
+        head.setTextColor(focused ? fg : fgDim);
     }
 
     private TextView line(int color, Typeface tf) {
@@ -93,13 +97,35 @@ final class AgentsPanel extends LinearLayout {
         running = true;
         worker = new Thread(() -> {
             while (running) {
-                CharSequence text = render();
-                main.post(() -> { if (running) body.setText(text); });
+                Deck.Snapshot s = null;
+                String error = null;
+                try { s = Deck.snapshot(prefs); }
+                catch (Deck.Refused e) { error = "token refused (" + e.code + ") - mint a read-only one"; }
+                catch (Exception e) { error = "boxdeck unreachable - is Tailscale on?"; }
+                final Deck.Snapshot snap = s;
+                final String err = error;
+                main.post(() -> {
+                    if (!running) return;
+                    cost = snap == null ? "" : String.format(java.util.Locale.ROOT, " · ~$%.0f today", snap.cost());
+                    showHead(hasFocus());
+                    swap(snap == null ? dim(err) : render(snap));
+                });
                 try { Thread.sleep(POLL_MS); } catch (InterruptedException e) { return; }
             }
         }, "boxdeck-panel");
         worker.setDaemon(true);
         worker.start();
+    }
+
+    // A changed figure fades out and back in (120 ms + 180 ms), so the eye notices that something
+    // moved without the panel flashing. An unchanged poll does nothing.
+    private void swap(CharSequence text) {
+        if (text.toString().equals(body.getText().toString())) return;
+        if (body.getText().length() == 0) { body.setText(text); return; }
+        body.animate().alpha(0.35f).setDuration(120).withEndAction(() -> {
+            body.setText(text);
+            body.animate().alpha(1f).setDuration(180).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        }).start();
     }
 
     void stop() {
@@ -108,76 +134,58 @@ final class AgentsPanel extends LinearLayout {
         worker = null;
     }
 
-    private CharSequence render() {
+    private CharSequence dim(String s) {
         SpannableStringBuilder out = new SpannableStringBuilder();
-        List<Deck.Box> boxes;
-        try {
-            boxes = Deck.fetch(prefs);
-        } catch (Deck.Refused e) {
-            append(out, "token refused (" + e.code + ") - mint a read-only one", fgDim);
-            return out;
-        } catch (Exception e) {
-            append(out, "boxdeck unreachable - is Tailscale on?", fgDim);
-            return out;
-        }
-        JSONObject usage = null;
-        for (Deck.Box b : boxes) {
-            if (out.length() > 0) out.append("\n");
-            append(out, b.name + "  ", fg);
-            if (!b.ok) { append(out, "down", WAITING); continue; }
-            if (usage == null && b.usage != null) usage = b.usage;
-            if (!b.listed) {
-                append(out, b.count + " agents" + (b.error != null ? " (" + b.error + ")" : ""), fgDim);
-                continue;
-            }
-            int working = b.working(), waiting = b.waiting(), other = b.agents.size() - working - waiting;
-            String sep = "";
-            if (working > 0) { append(out, "● " + working + " working", fg); sep = "   "; }
-            if (waiting > 0) { append(out, sep + "◐ " + waiting + " waiting", WAITING); sep = "   "; }
-            if (other > 0) append(out, sep + other + " other", fgDim);
-            if (b.agents.isEmpty()) append(out, "no agents", fgDim);
-        }
-        appendQuota(out, usage, boxes);
+        append(out, s, fgDim);
         return out;
     }
 
-    // Claude's quota is per account, so the first machine that reports it is enough. Cost is per
-    // machine, so it is summed.
-    private void appendQuota(SpannableStringBuilder out, JSONObject usage, List<Deck.Box> boxes) {
-        JSONObject quota = usage == null ? null : usage.optJSONObject("quota");
-        JSONObject claude = quota == null ? null : quota.optJSONObject("claude");
-        JSONObject five = claude == null ? null : claude.optJSONObject("fiveHour");
-        JSONObject week = claude == null ? null : claude.optJSONObject("sevenDay");
+    private CharSequence render(Deck.Snapshot s) {
+        SpannableStringBuilder out = new SpannableStringBuilder();
+        for (Deck.Box b : s.boxes) {
+            if (out.length() > 0) out.append("\n");
+            append(out, b.name + "  ", fg);
+            if (!b.ok) { append(out, "✕ offline", WAITING); continue; }
+            String sep = "";
+            if (!b.listed) {
+                append(out, b.count + " agents" + (b.error != null ? " (" + b.error + ")" : ""), fgDim);
+                sep = "   ";
+            } else {
+                int working = b.working(), waiting = b.waiting(), other = b.agents.size() - working - waiting;
+                if (working > 0) { append(out, "● " + working + " working", fg); sep = "   "; }
+                if (waiting > 0) { append(out, sep + "◐ " + waiting + " waiting", WAITING); sep = "   "; }
+                if (other > 0) { append(out, sep + other + " outside herdr", fgDim); sep = "   "; }
+                if (b.agents.isEmpty()) { append(out, "no agents", fgDim); sep = "   "; }
+            }
+            if (b.diskFull()) append(out, sep + "disk " + b.diskPct + "%", WAITING);
+        }
+
         out.append("\n");
-        if (five != null && five.has("pct")) {
-            int used = pct(five);
+        int five = s.left("fiveHour"), week = s.left("sevenDay");
+        if (five >= 0) {
             StringBuilder bar = new StringBuilder();
-            for (int i = 0; i < 10; i++) bar.append(i < Math.round(used / 10f) ? '█' : '░');
+            for (int i = 0; i < 10; i++) bar.append(i < Math.round((100 - five) / 10f) ? '█' : '░');
             append(out, "claude 5h ", fgDim);
-            append(out, bar.toString(), used >= 80 ? WAITING : fg);
-            append(out, " " + (100 - used) + "% left", fgSoft);
+            append(out, bar.toString(), five < Deck.QUOTA_LOW ? WAITING : fg);
+            append(out, " " + five + "% left", five < Deck.QUOTA_LOW ? WAITING : fgSoft);
         } else {
             append(out, "claude 5h -", fgDim);
         }
-        if (week != null && week.has("pct")) {
-            int used = pct(week);
+        if (week >= 0) {
             append(out, " · 7d ", fgDim);
-            append(out, (100 - used) + "% left", used >= 80 ? WAITING : fgSoft);
+            append(out, week + "% left", week < Deck.QUOTA_LOW ? WAITING : fgSoft);
         }
-        double cost = 0;
-        for (Deck.Box b : boxes) {
-            JSONObject today = b.usage == null ? null : b.usage.optJSONObject("today");
-            if (today != null) for (String p : new String[] {"claude", "codex"}) {
-                JSONObject t = today.optJSONObject(p);
-                if (t != null) cost += t.optDouble("costUsd", 0);
-            }
-        }
-        // boxdeck prices tokens at list price, so this is an estimate, not a bill.
-        append(out, String.format(java.util.Locale.ROOT, "\n~$%.0f today (list price)", cost), fgDim);
-    }
 
-    private static int pct(JSONObject o) {
-        return (int) Math.round(Math.max(0, Math.min(100, o.optDouble("pct", 0))));
+        JSONObject prs = s.github == null ? null : s.github.optJSONObject("prs");
+        if (prs != null) {
+            int open = prs.optInt("open"), failing = prs.optInt("failing"), pending = prs.optInt("pending");
+            out.append("\n");
+            append(out, "prs " + open + " open", fgSoft);
+            if (failing > 0) append(out, " · ✕ " + failing + " failing", WAITING);
+            if (pending > 0) append(out, " · " + pending + " pending", fgDim);
+            if (open > 0 && failing == 0 && pending == 0) append(out, " · ✓ all passing", fgDim);
+        }
+        return out;
     }
 
     static void append(SpannableStringBuilder out, String s, int color) {

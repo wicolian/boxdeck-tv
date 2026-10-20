@@ -32,8 +32,19 @@ final class Deck {
     static final class Box {
         String name, error;
         boolean ok = true, listed; // listed: its agents were read, not only counted
-        int count;
+        int count, diskPct = -1;
         JSONObject usage;
+        static final int DISK_FULL = 90; // percent: from here the disk shows, in amber
+        boolean diskFull() { return diskPct >= DISK_FULL; }
+        double costToday() {
+            double c = 0;
+            JSONObject today = usage == null ? null : usage.optJSONObject("today");
+            if (today != null) for (String p : new String[] {"claude", "codex"}) {
+                JSONObject t = today.optJSONObject(p);
+                if (t != null) c += t.optDouble("costUsd", 0);
+            }
+            return c;
+        }
         final List<Agent> agents = new ArrayList<>();
         int working() { int n = 0; for (Agent a : agents) if (a.working()) n++; return n; }
         int waiting() { int n = 0; for (Agent a : agents) if (a.waiting()) n++; return n; }
@@ -69,6 +80,8 @@ final class Deck {
             b.ok = r.optBoolean("ok", true);
             b.count = r.optInt("agents", 0);
             b.usage = r.optJSONObject("usage");
+            JSONObject health = r.optJSONObject("health");
+            if (health != null) b.diskPct = health.optInt("diskPct", -1);
             boolean local = r.optBoolean("local");
             String url = local ? hub : r.optString("url", "").replaceAll("/+$", "");
             String token = local ? hubToken : p.getString(TOKEN_KEY + "_" + b.name, null);
@@ -89,6 +102,58 @@ final class Deck {
             out.add(b);
         }
         return out;
+    }
+
+    // Everything one poll knows: machines, the Claude quota (per account, so taken from the first
+    // machine that reports it) and the GitHub summary, if boxdeck serves one.
+    static final class Snapshot {
+        final List<Box> boxes;
+        final JSONObject github; // null when boxdeck has no /api/github or it is not ok
+        Snapshot(List<Box> boxes, JSONObject github) { this.boxes = boxes; this.github = github; }
+
+        JSONObject quota(String window) { // "fiveHour" or "sevenDay"
+            for (Box b : boxes) {
+                JSONObject q = b.usage == null ? null : b.usage.optJSONObject("quota");
+                JSONObject c = q == null ? null : q.optJSONObject("claude");
+                JSONObject w = c == null ? null : c.optJSONObject(window);
+                if (w != null && w.has("pct")) return w;
+            }
+            return null;
+        }
+
+        // Percent left in a quota window, or -1 when nobody reports it.
+        int left(String window) {
+            JSONObject w = quota(window);
+            return w == null ? -1 : 100 - (int) Math.round(Math.max(0, Math.min(100, w.optDouble("pct", 0))));
+        }
+
+        double cost() { double c = 0; for (Box b : boxes) c += b.costToday(); return c; }
+        int waiting() { int n = 0; for (Box b : boxes) n += b.waiting(); return n; }
+        int working() { int n = 0; for (Box b : boxes) n += b.working(); return n; }
+    }
+
+    static final int QUOTA_LOW = 20; // percent left: from here the quota shows, and alerts, in amber
+
+    static Snapshot snapshot(SharedPreferences p) throws Exception {
+        List<Box> boxes = fetch(p);
+        JSONObject gh = null;
+        try {
+            JSONObject o = new JSONObject(get(p.getString(URL_KEY, "") + "/api/github", p.getString(TOKEN_KEY, "")));
+            if (o.optBoolean("ok")) gh = o;
+        } catch (Exception ignored) {} // older boxdeck, no gh on the hub, or gh is down: no PR line
+        return new Snapshot(boxes, gh);
+    }
+
+    // "21:40" for an ISO time like "2026-10-20T19:39:59.77+00:00", in the TV's time zone.
+    static String clock(String iso) {
+        if (iso == null || iso.isEmpty()) return "";
+        try {
+            String s = iso.replaceAll("\\.\\d+", "").replace("Z", "+00:00");
+            java.text.SimpleDateFormat in = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.ROOT);
+            return new java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(in.parse(s));
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private static Agent agent(String box, JSONObject o) {
