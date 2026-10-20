@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.wicolian.boxdecktv" android:versionCode="1" android:versionName="0.1.0">
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
+    <!-- Only for the network tile: Wi-Fi, Ethernet or offline, and the Wi-Fi signal. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Only for the agents panel: reads boxdeck over the tailnet. Off until a boxdeck URL is set. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The watcher: "agent needs you" toasts during any app, kept alive as a foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Only if granted over adb: keeps wireless debugging on after a restart. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <!-- Android 11+ only shows apps a home screen asks to see: TV apps and normal apps. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Settings screens the network tile and the Bluetooth, Sound and Picture shortcuts open. -->
+        <intent><action android:name="android.settings.WIFI_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.BLUETOOTH_SETTINGS" /></intent>
+        <intent><action android:name="com.google.android.intent.action.CONNECT_INPUT" /></intent>
+        <intent><action android:name="android.settings.SOUND_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.DISPLAY_SETTINGS" /></intent>
+        <package android:name="com.tcl.settings" />
+        <!-- Google TV's HDMI input player, so HDMI tiles can see when the TV sends HDMI to it. -->
+        <package android:name="com.google.android.tv.inputplayer" />
+        <!-- Tailscale, so the watcher can ask it to connect after a restart. -->
+        <package android:name="com.tailscale.ipn" />
+    </queries>
+    <!-- Lets "Uninstall" in the app menu open Android's uninstall prompt. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <!-- Cleartext is for boxdeck on the tailnet (plain http inside WireGuard). -->
+    <application android:label="Home" android:allowBackup="false" android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <activity android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask" android:stateNotNeeded="true"
+            android:clearTaskOnLaunch="true" android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode|locale">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <!-- Every herdr pane on every machine, opened with OK on the agents panel. -->
+        <activity android:name=".DeckActivity" android:exported="false"
+            android:screenOrientation="landscape" android:excludeFromRecents="true" />
+        <service android:name=".WatchService" android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows a toast when a coding agent on the user's machines stops and waits for input" />
+        </service>
+        <!-- Matrix code rain, offered as a screensaver in Settings > Screensaver. -->
+        <service android:name=".MatrixDream" android:exported="true" android:label="Matrix"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
