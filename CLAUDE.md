@@ -36,6 +36,12 @@ adb connect <ip>:<port> && adb -s <ip>:<port> tcpip 5555 && adb connect <ip>:555
 
 ## Architecture
 
+- **`Theme`** holds 12 palettes (Omarchy's themes, Terminal, Classic, and an optional Custom) and the
+  fonts: Inter by default, JetBrains Mono when chosen or for Terminal, both bundled in `assets/fonts`.
+  Every screen reads `Theme.current(prefs)`. `accent` means focus or running; `warn` means it wants you.
+- **Two layouts.** Shelf (`HeroRow` with a headline and agent cards, apps on a solid "glass" dock, and
+  icons for inputs, settings and network) is the default. Grid is the original tv-detox layout. The
+  `layout` pref picks one, and Classic is always Grid.
 - **`MainActivity`** is the home screen, adapted from tv-detox:
   - App tiles, HDMI inputs, editing, and wallpapers.
   - **All configuration arrives as intent extras** on `am start -n …/.MainActivity`: `apps`,
@@ -76,6 +82,17 @@ adb connect <ip>:<port> && adb -s <ip>:<port> tcpip 5555 && adb connect <ip>:555
 - To test the screensaver, set `settings put system screen_off_timeout 15000` and restore `300000`
   afterwards. Android's `UndimDetectorWakeLock` blocks the screensaver for a few minutes after
   repeated quick dims.
+
+## Performance rules (measured on the TV's PowerVR GPU)
+
+- **No full-screen gradients drawn per frame.** `themed()` paints the canvas once into a bitmap.
+- **No translucent surfaces over the canvas.** `solid()` pre-mixes the colour. Blending cost 36 ms of
+  every frame.
+- **No elevation or translationZ shadows on focus.** Use zoom and the accent ring.
+- **No continuous 60 fps animation.** The breathing light is one Handler loop at 15 fps, and it stops
+  in `onPause`.
+- Measure before and after with `adb shell dumpsys gfxinfo dev.wicolian.boxdecktv framestats`. The
+  gap from `SwapBuffers` to `FrameCompleted` is GPU wait. Target: 0 janky frames while moving focus.
 
 ## Rules that are easy to break
 

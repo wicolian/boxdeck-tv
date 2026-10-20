@@ -26,12 +26,20 @@ public class MatrixDream extends DreamService {
     private volatile int waiting = -1, working = -1, fiveLeft = -1, weekLeft = -1;
     private volatile double cost = -1;
     private volatile boolean dreaming;
+    // The rain falls in the theme's accent (blue in Tokyo Night, green in Gruvbox), the agents line uses
+    // its warn colour for waiting, the clock its text colour.
+    Theme theme;
+    android.graphics.Typeface mono, monoBold;
 
     @Override
     public void onAttachedToWindow() {
         super.onAttachedToWindow();
         setInteractive(false);
         setFullscreen(true);
+        android.content.SharedPreferences prefs = getSharedPreferences(Deck.PREFS, 0);
+        theme = Theme.current(prefs);
+        mono = Theme.regular(this, prefs);
+        monoBold = Theme.bold(this, prefs);
         setContentView(new Rain(this, this));
     }
 
@@ -92,14 +100,14 @@ public class MatrixDream extends DreamService {
         Rain(Context c, MatrixDream dream) {
             super(c);
             this.dream = dream;
-            status.setTypeface(Typeface.MONOSPACE);
+            status.setTypeface(dream.mono);
             status.setTextAlign(Paint.Align.RIGHT);
             plate.setColor(Color.argb(200, 0, 0, 0)); // a dark plate under the clock, so rain never hides it
             setBackgroundColor(Color.BLACK);
-            glyph.setTypeface(Typeface.MONOSPACE);
+            glyph.setTypeface(Typeface.MONOSPACE); // the TV's mono has the katakana the rain needs
             fade.setColor(Color.argb(38, 0, 0, 0));
-            clock.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
-            clock.setColor(MainActivity.PHOSPHOR);
+            clock.setTypeface(dream.monoBold);
+            clock.setColor(dream.theme.terminal ? dream.theme.accent : dream.theme.fg);
             clock.setTextAlign(Paint.Align.RIGHT);
         }
 
@@ -126,7 +134,7 @@ public class MatrixDream extends DreamService {
             for (int i = 0; i < drops.length; i++) {
                 if (drops[i] >= 0) {
                     // The leading glyph is near white, the trail behind it the usual green.
-                    glyph.setColor(rnd.nextInt(10) == 0 ? 0xFFD8FFE4 : MainActivity.PHOSPHOR);
+                    glyph.setColor(rnd.nextInt(10) == 0 ? Theme.blend(dream.theme.accent, 0xFFFFFFFF, 0.75f) : dream.theme.accent);
                     char ch = GLYPHS.charAt(rnd.nextInt(GLYPHS.length()));
                     canvas.drawText(String.valueOf(ch), i * cell, (drops[i] + 1) * cell, glyph);
                 }
@@ -152,13 +160,13 @@ public class MatrixDream extends DreamService {
                     : (wait + work).isEmpty() ? base - clock.getTextSize() : lineY - status.getTextSize();
             out.drawRoundRect(right - width - pad / 2, top - pad / 2, right + pad / 2, base + pad / 2, pad / 2, pad / 2, plate);
             if (!use.isEmpty()) {
-                status.setColor(low ? AgentsPanel.WAITING : 0x9939FF7A);
+                status.setColor(low ? dream.theme.warn : dream.theme.fgDim());
                 out.drawText(use, right, useY, status);
             }
             out.drawText(now, right, base, clock);
-            if (!work.isEmpty()) { status.setColor(MainActivity.PHOSPHOR); out.drawText(work, right, lineY, status); }
+            if (!work.isEmpty()) { status.setColor(dream.theme.accent); out.drawText(work, right, lineY, status); }
             if (!wait.isEmpty()) {
-                status.setColor(AgentsPanel.WAITING);
+                status.setColor(dream.theme.warn);
                 out.drawText(wait, right - status.measureText(gap + work), lineY, status);
             }
             postInvalidateDelayed(FRAME_MS);

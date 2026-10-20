@@ -127,6 +127,13 @@ public class MainActivity extends Activity {
     private static Typeface regular, semibold;
     // The page's colours: white glass, or green phosphor in the Terminal look.
     private boolean term;
+    private Theme theme;     // the look: colours, and with them the canvas (see Theme)
+    private boolean shelf;   // Shelf layout: agents as a hero row, apps on a glass shelf; else the grid
+    private HeroRow hero;    // the agents row, Shelf only
+    private TextView stats;  // the line under the Shelf title
+    private FrameLayout dock; // the glass shelf, Shelf only
+    private boolean dockShown;
+    private static final String INPUTS = "inputs";
     private int fg = Color.WHITE, fgSoft = 0xE0FFFFFF, fgDim = 0xA8FFFFFF, fill = 0x13FFFFFF, fillOn = 0x38FFFFFF,
             edge = 0x17FFFFFF, panelBg = 0xFF161113, dropBg = 0xFF231D1F;
     private TextView cursor; // the solid block after the time, Terminal only. It does not blink: on a
@@ -177,15 +184,26 @@ public class MainActivity extends Activity {
         // Android opens the home screen at every boot, so the watcher (alerts, wireless debugging) starts here.
         WatchService.keepAdbOn(this);
         WatchService.start(this);
-        term =TERMINAL.equals(WALLPAPER_NAMES[wallpaper()]);
-        loadFonts(term);
+        SharedPreferences prefs = getSharedPreferences(PREFS, 0);
+        theme = Theme.current(prefs);
+        term = theme.terminal;
+        shelf = !theme.classic && "shelf".equals(prefs.getString("layout", term ? "grid" : "shelf"));
+        if (theme.classic) loadFonts(false);
+        else { regular = Theme.regular(this, prefs); semibold = Theme.bold(this, prefs); }
+        if (!theme.classic && !term) {
+            // A theme's own world: surfaces from its surface colour, focus and running things in its
+            // accent, hairlines from its text colour at low alpha.
+            fg = theme.fg; fgSoft = theme.fgSoft(); fgDim = theme.fgDim();
+            fill = Theme.alpha(theme.surface, 0xB3); fillOn = Theme.alpha(theme.accent, 0x33);
+            edge = Theme.alpha(theme.fg, 0x1A); panelBg = theme.surface; dropBg = theme.raised();
+        }
         if (term) {
             // Green is the one accent. Text steps down in alpha; surfaces stay near black, edges faint.
             fg = PHOSPHOR; fgSoft = 0xC839FF7A; fgDim = 0x7839FF7A; fill = 0x08FFFFFF; fillOn = 0x1F39FF7A;
             edge = 0x1F39FF7A; panelBg = 0xFF050706; dropBg = 0xFF0A0D0B;
         }
         scale = getResources().getDisplayMetrics().widthPixels / 1920f;
-        showWallpaper(wallpaper());
+        showBackground();
 
         ScrollView scroller = new ScrollView(this);
         scroller.setFillViewport(true);
@@ -196,9 +214,11 @@ public class MainActivity extends Activity {
         root.setClipChildren(false);
         scroller.addView(root, new FrameLayout.LayoutParams(-1, -2));
 
+        shownLocale = java.util.Locale.getDefault();
+        if (shelf) buildShelfHeader();
+        else {
         LinearLayout clock = new LinearLayout(this);
         clock.setOrientation(LinearLayout.VERTICAL);
-        shownLocale = java.util.Locale.getDefault();
         String day = Strings.datePattern();
         TextClock date = clock(day, day, px(30), fgDim, regular);
         TextClock time = clock("h:mm", "H:mm", px(term ? 160 : 176), fg, semibold);
@@ -236,11 +256,12 @@ public class MainActivity extends Activity {
 
         // Agents panel in the empty space right of the clock, only once boxdeck is set up.
         if (Deck.configured(getSharedPreferences(PREFS, 0))) {
-            agents = new AgentsPanel(this, getSharedPreferences(PREFS, 0), fg, fgSoft, fgDim, fillOn, px(RADIUS), px(26), regular);
+            agents = new AgentsPanel(this, getSharedPreferences(PREFS, 0), fg, fgSoft, fgDim, theme.warn, fillOn, px(RADIUS), px(26), regular);
             FrameLayout.LayoutParams ap = new FrameLayout.LayoutParams(px(820), -2, Gravity.TOP | Gravity.END);
             ap.rightMargin = px(MARGIN);
             ap.topMargin = px(132);
             root.addView(agents, ap);
+        }
         }
 
         moveHint = text(px(24), fgDim, regular);
@@ -314,11 +335,31 @@ public class MainActivity extends Activity {
                 if (root != null) recreate();
             }
         }
+        // --es theme "Tokyo Night", --es theme_custom "bg=#..,surface=#..,fg=#..,dim=#..,accent=#..,warn=#..",
+        // --es layout shelf|grid, --es font mono|sans, --es alerts on|off: the same as Settings on the TV.
+        if (extras != null) {
+            SharedPreferences prefs = getSharedPreferences(PREFS, 0);
+            SharedPreferences.Editor e = prefs.edit();
+            boolean look = false;
+            String custom = extras.getString("theme_custom");
+            if (custom != null && Theme.custom(custom) != null) { e.putString("theme_custom", custom).putString("theme", Theme.CUSTOM); look = true; }
+            String th = extras.getString("theme");
+            if (th != null) { e.putString("theme", th); look = true; }
+            for (String k : new String[] {"layout", "font", "alerts"}) {
+                String v = extras.getString(k);
+                if (v != null) { e.putString(k, v.trim().toLowerCase(java.util.Locale.ROOT)); look = true; }
+            }
+            if (look) {
+                e.commit();
+                if (root != null) recreate();
+            }
+        }
         // --es wallpaper Terminal  picks a wallpaper by name, like the Wallpaper menu does.
         String paper = intent == null ? null : intent.getStringExtra("wallpaper");
         if (paper != null && Arrays.asList(WALLPAPER_NAMES).contains(paper)
                 && !paper.equals(getSharedPreferences(PREFS, 0).getString("wallpaper", null))) {
-            getSharedPreferences(PREFS, 0).edit().putString("wallpaper", paper).commit();
+            getSharedPreferences(PREFS, 0).edit().putString("wallpaper", paper)
+                    .putString("theme", TERMINAL.equals(paper) ? Theme.TERMINAL : Theme.CLASSIC).commit();
             if (root != null) recreate();
         }
         if (apps == null && quick == null) return false;
@@ -377,11 +418,13 @@ public class MainActivity extends Activity {
         if ((f == null || !shownOnce) && !tiles.isEmpty()) tiles.get(0).requestFocus();
         shownOnce = true;
         if (agents != null) agents.start();
+        if (hero != null) hero.start();
     }
 
     @Override
     protected void onPause() {
         if (agents != null) agents.stop();
+        if (hero != null) hero.stop();
         super.onPause();
     }
 
@@ -464,7 +507,8 @@ public class MainActivity extends Activity {
             dot.setSize(size, size);
             return dot;
         }, size, wallpaper(), this::showWallpaper, which -> {
-            getSharedPreferences(PREFS, 0).edit().putString("wallpaper", WALLPAPER_NAMES[which]).commit();
+            getSharedPreferences(PREFS, 0).edit().putString("wallpaper", WALLPAPER_NAMES[which])
+                    .putString("theme", TERMINAL.equals(WALLPAPER_NAMES[which]) ? Theme.TERMINAL : Theme.CLASSIC).commit();
             showWallpaper(which);
             if (TERMINAL.equals(WALLPAPER_NAMES[which]) != term) recreate();
         });
@@ -488,6 +532,212 @@ public class MainActivity extends Activity {
         return g;
     }
 
+    // Shelf layout geometry, at 1920x1080.
+    private static final int SHELF_PAD = 28, SHELF_GAP = 24, SHELF_BOTTOM = 56, HERO_TOP = 380;
+
+    private void showBackground() {
+        if (theme.classic) showWallpaper(wallpaper());
+        else getWindow().setBackgroundDrawable(themed(theme));
+    }
+
+    // A theme's canvas: its background, a little darker towards the bottom, and a faint glow of its
+    // accent from the top left. Painted once into a bitmap and then only copied: this TV's GPU is slow
+    // at full-screen gradients, and a window background is drawn again on every frame.
+    private Drawable themed(Theme t) {
+        int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
+        int div = t.terminal ? 1 : 2; // scanlines need full resolution; a soft gradient doesn't
+        Bitmap b = Bitmap.createBitmap(Math.max(1, w / div), Math.max(1, h / div), Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        GradientDrawable base = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] {t.bg, Theme.blend(t.bg, Color.BLACK, 0.35f)});
+        GradientDrawable glow = new GradientDrawable();
+        glow.setGradientType(GradientDrawable.RADIAL_GRADIENT);
+        glow.setColors(new int[] {Theme.alpha(t.accent, 0x16), Theme.alpha(t.accent, 0)});
+        glow.setGradientCenter(0.08f, -0.12f);
+        glow.setGradientRadius(px(1300) / (float) div);
+        for (GradientDrawable g : new GradientDrawable[] {base, glow}) {
+            g.setDither(true);
+            g.setBounds(0, 0, b.getWidth(), b.getHeight());
+            g.draw(c);
+        }
+        if (t.terminal) {
+            android.graphics.Paint line = new android.graphics.Paint();
+            line.setColor(0x0C39FF7A);
+            for (int y = 0; y < b.getHeight(); y += 3) c.drawRect(0, y, b.getWidth(), y + 1, line);
+        }
+        BitmapDrawable d = new BitmapDrawable(getResources(), b);
+        d.setFilterBitmap(true);
+        return d;
+    }
+
+    // What a see-through surface would look like over the canvas, as one solid colour, so the GPU
+    // doesn't blend it every frame. bgAt: 0 top of the screen, 1 bottom.
+    private int solid(int color, int alpha, float bgAt) {
+        int under = Theme.blend(theme.bg, Color.BLACK, 0.35f * bgAt);
+        return Theme.blend(under, color, alpha / 255f) | 0xFF000000;
+    }
+
+    // Shelf header: a headline that answers "does anything need me?" and a quiet line under it on the
+    // left; the time, the icons and the budget on the right. It eases in on first show.
+    private void buildShelfHeader() {
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.VERTICAL);
+        TextView headline = text(px(58), fg, semibold);
+        headline.setIncludeFontPadding(false);
+        headline.setLetterSpacing(-0.015f);
+        headline.setFontFeatureSettings("tnum");
+        head.addView(headline);
+        stats = text(px(26), fgSoft, regular);
+        stats.setSingleLine(true);
+        stats.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2);
+        sp.topMargin = px(16);
+        head.addView(stats, sp);
+        root.addView(head, at(px(MARGIN), px(76), px(1150), -2));
+
+        TextClock time = clock("h:mm", "H:mm", px(40), fg, semibold);
+        time.setFontFeatureSettings("tnum");
+        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        tp.rightMargin = px(MARGIN) + 3 * px(ICON_BUTTON) + 2 * px(ICON_GAP) + px(24);
+        tp.topMargin = px(ICON_TOP) + px(14);
+        root.addView(time, tp);
+        TextView budget = text(px(22), fgDim, regular);
+        budget.setSingleLine(true);
+        budget.setGravity(Gravity.END);
+        budget.setFontFeatureSettings("tnum");
+        FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(px(700), -2, Gravity.TOP | Gravity.END);
+        bp.rightMargin = px(MARGIN);
+        bp.topMargin = px(ICON_TOP) + px(ICON_BUTTON) + px(30);
+        root.addView(budget, bp);
+
+        hero = new HeroRow(this, getSharedPreferences(PREFS, 0), theme, regular, semibold, scale, headline, stats, budget);
+        root.addView(hero, at(0, px(HERO_TOP), -1, -2));
+
+        for (View v : new View[] {head, time, budget}) {
+            v.setAlpha(0f);
+            v.setTranslationY(px(14));
+            v.animate().alpha(1f).translationY(0).setDuration(360).setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+        }
+    }
+
+    // Shelf layout: the apps on one glass shelf at the bottom, the inputs and settings as icons at the
+    // top right. One row, sized so up to eight apps fit without scrolling.
+    private void buildShelf(String want, int wantAt) {
+        PackageManager pm = getPackageManager();
+        int screenW = getResources().getDisplayMetrics().widthPixels, screenH = getResources().getDisplayMetrics().heightPixels;
+        List<String> apps = appList(pm);
+        int n = 0;
+        for (String pkg : apps) if (launchIntent(pm, pkg) != null) n++;
+        int dockX = px(48), dockW = screenW - 2 * dockX, inner = dockW - 2 * px(SHELF_PAD);
+        int w = Math.max(px(180), Math.min(px(250), (inner - px(SHELF_GAP) * (Math.max(1, n) - 1)) / Math.max(1, n)));
+        int h = w * 9 / 16;
+        tileW = w;
+        tileH = h;
+        int dockH = h + 2 * px(SHELF_PAD), dockY = screenH - px(SHELF_BOTTOM) - dockH;
+
+        if (dock != null) root.removeView(dock);
+        dock = new FrameLayout(this);
+        dock.setClipChildren(false);
+        GradientDrawable glass = new GradientDrawable();
+        glass.setCornerRadius(px(44));
+        glass.setColor(solid(theme.surface, 0xCC, 0.9f));
+        glass.setStroke(Math.max(1, px(2)), edge);
+        dock.setBackground(glass);
+        root.addView(dock, at(dockX, dockY, dockW, dockH));
+        // The shelf rises into place the first time the page shows.
+        if (!dockShown) {
+            dockShown = true;
+            dock.setAlpha(0f);
+            dock.setTranslationY(px(48));
+            dock.animate().alpha(1f).translationY(0).setStartDelay(180).setDuration(420)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(2f)).start();
+        }
+        ((FrameLayout.LayoutParams) moveHint.getLayoutParams()).topMargin = dockY - px(52);
+        root.setMinimumHeight(screenH);
+
+        for (String pkg : apps) {
+            Intent li = launchIntent(pm, pkg);
+            if (li == null) continue;
+            Drawable banner = null;
+            try {
+                banner = pm.getActivityBanner(li);
+                if (banner == null) banner = pm.getApplicationBanner(pkg);
+            } catch (Exception ignored) {}
+            String label = labelOf(pkg);
+            Drawable icon = null;
+            if (banner == null) try { icon = pm.getApplicationIcon(pkg); } catch (Exception ignored) {}
+            int i = rowApps.size();
+            rowApps.add(pkg);
+            addTile(dock, pkg, label, banner, null, icon, gridX(i), gridY(i), w, h);
+        }
+
+        int ib = px(ICON_BUTTON), ig = px(ICON_GAP);
+        int qx = screenW - px(MARGIN) + (ib - px(ICON_SIZE)) / 2 - 3 * ib - 2 * ig;
+        if (!hdmiInputs().isEmpty()) addIcon(INPUTS, Strings.t("Inputs"), new LineIcon(LineIcon.HDMI), qx);
+        qx += ib + ig;
+        addIcon(SETTINGS, Strings.t("Settings"), new LineIcon(LineIcon.SETTINGS), qx);
+        qx += ib + ig;
+        netIcon = addIcon(NETWORK, Strings.t("Network"), null, qx);
+        netState = -1;
+        refreshNetwork();
+
+        root.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        if (wantAt >= 0 && !rowApps.contains(want))
+            want = rowApps.isEmpty() ? SETTINGS : rowApps.get(Math.min(wantAt, rowApps.size() - 1));
+        View restore = null;
+        for (View t : tiles) if (t.getTag().equals(want)) restore = t;
+        if (restore != null) restore.requestFocus();
+    }
+
+    // Settings: the home screen's own choices first, then the TV's settings.
+    private void showSettingsMenu() {
+        final SharedPreferences prefs = getSharedPreferences(PREFS, 0);
+        final boolean alerts = "on".equals(prefs.getString("alerts", "off"));
+        final List<String> items = new ArrayList<>();
+        items.add("Theme · " + theme.name);
+        if (!theme.classic) items.add("Layout · " + (shelf ? "Shelf" : "Grid"));
+        if (!theme.classic) items.add("Font · " + (Theme.mono(prefs) ? "Mono" : "Sans"));
+        items.add("Alerts · " + (alerts ? "On" : "Off"));
+        if (theme.classic) items.add("Wallpaper");
+        if (shelf) { items.add("Add app"); if (launchIntent(getPackageManager(), PLAY_STORE) != null) items.add("Play Store"); }
+        items.add("TV settings");
+        dropdown(tile(SETTINGS), items.toArray(new String[0]), which -> {
+            String item = items.get(which);
+            if (item.startsWith("Theme")) showThemes();
+            else if (item.startsWith("Layout")) { prefs.edit().putString("layout", shelf ? "grid" : "shelf").commit(); recreate(); }
+            else if (item.startsWith("Font")) { prefs.edit().putString("font", Theme.mono(prefs) ? "sans" : "mono").commit(); recreate(); }
+            else if (item.startsWith("Alerts")) prefs.edit().putString("alerts", alerts ? "off" : "on").apply();
+            else if (item.equals("Wallpaper")) showWallpapers();
+            else if (item.equals("Add app")) showAddMenu(-1);
+            else if (item.equals("Play Store")) open(PLAY_STORE);
+            else try { startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+            catch (Exception ignored) {}
+        });
+    }
+
+    // The themes, each with a dot of its background ringed in its accent. Moving through the list shows
+    // each canvas behind the panel; OK keeps it (and restarts the page in it), Back puts the old one back.
+    private void showThemes() {
+        final SharedPreferences prefs = getSharedPreferences(PREFS, 0);
+        final List<Theme> all = Theme.all(prefs);
+        List<String> names = new ArrayList<>();
+        int selected = 0;
+        for (int i = 0; i < all.size(); i++) { names.add(all.get(i).name); if (all.get(i).name.equals(theme.name)) selected = i; }
+        final int size = px(40);
+        panel(Strings.t("Theme"), names, pos -> {
+            Theme t = all.get(pos);
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL);
+            dot.setColor(t.bg);
+            dot.setStroke(Math.max(2, px(5)), t.accent);
+            dot.setSize(size, size);
+            return dot;
+        }, size, selected, pos -> getWindow().setBackgroundDrawable(all.get(pos).classic ? background(WALLPAPERS[wallpaper()]) : themed(all.get(pos))), which -> {
+            prefs.edit().putString("theme", all.get(which).name).commit();
+            recreate();
+        });
+    }
+
     private void buildTiles() {
         // While tiles are swapped out, removing the focused one would hand focus down the row (and
         // overwrite focusedKey), so hold focus off until the new tiles are in.
@@ -503,6 +753,7 @@ public class MainActivity extends Activity {
         movingKey = null;
         moveHint.setVisibility(View.GONE);
 
+        if (shelf) { buildShelf(want, wantAt); return; }
         PackageManager pm = getPackageManager();
         int m = px(MARGIN), g = px(GAP);
         int w = (getResources().getDisplayMetrics().widthPixels - 2 * m - g * (PER_ROW - 1)) / PER_ROW;
@@ -582,13 +833,13 @@ public class MainActivity extends Activity {
         final GradientDrawable bg = new GradientDrawable();
         bg.setCornerRadius(px(RADIUS));
         if (banner != null) {
-            bg.setColor(term ? Color.BLACK : 0xFF1E1A1C);
+            bg.setColor(theme.classic ? 0xFF1E1A1C : term ? Color.BLACK : theme.surface);
             ImageView iv = new ImageView(this);
             // Banners keep their own colours, even in Terminal: people find an app by its logo.
             iv.setImageDrawable(fit(banner, w, h));
             card.addView(iv, new FrameLayout.LayoutParams(-1, -1));
-            // In Terminal the banner sits in a faint green frame, drawn over it, that lights up on focus.
-            if (term) {
+            // In a theme the banner sits in a faint frame, drawn over it, that lights up in the accent on focus.
+            if (!theme.classic) {
                 GradientDrawable frame = new GradientDrawable();
                 frame.setCornerRadius(px(RADIUS));
                 frame.setStroke(Math.max(1, px(2)), edge);
@@ -605,7 +856,7 @@ public class MainActivity extends Activity {
             int size = lineIcon != null ? px(44) : px(64);
             if (lineIcon != null) iv.setImageDrawable(new LineIcon(lineIcon));
             else if (appIcon != null) iv.setImageDrawable(fit(appIcon, size, size));
-            if (term && lineIcon != null) iv.setColorFilter(fg);
+            if (!theme.classic && lineIcon != null) iv.setColorFilter(fg);
             inner.addView(iv, new LinearLayout.LayoutParams(size, size));
             TextView t = text(px(24), fgSoft, regular);
             t.setText(label);
@@ -635,12 +886,13 @@ public class MainActivity extends Activity {
         card.setOnFocusChangeListener((v, has) -> {
             if (has) focusedKey = key;
             if (glass) bg.setColor(has ? fillOn : fill);
-            if (term) {
+            if (!theme.classic) {
                 GradientDrawable ring = glass ? bg : (GradientDrawable) ((FrameLayout) v).getForeground();
-                if (ring != null) ring.setStroke(Math.max(1, px(has ? 4 : 2)), has ? fg : edge);
+                if (ring != null) ring.setStroke(Math.max(1, px(has ? 4 : 2)), has ? theme.accent : edge);
             }
-            v.animate().scaleX(has ? 1.1f : 1f).scaleY(has ? 1.1f : 1f).translationZ(has ? px(26) : 0)
-                    .setDuration(140).withLayer().start();
+            // Elevation shadows cost a frame on a TV chip; themes focus with zoom and the accent ring only.
+            v.animate().scaleX(has ? 1.1f : 1f).scaleY(has ? 1.1f : 1f).translationZ(has && theme.classic ? px(26) : 0)
+                    .setDuration(160).setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).withLayer().start();
             if (caption != null) caption.setVisibility(has ? View.VISIBLE : View.INVISIBLE);
         });
         final boolean editable = rowApps.contains(key);
@@ -697,7 +949,7 @@ public class MainActivity extends Activity {
         card.setBackground(bg);
         ImageView iv = new ImageView(this);
         iv.setImageDrawable(icon);
-        if (term) iv.setColorFilter(fg);
+        if (!theme.classic) iv.setColorFilter(fg);
         card.addView(iv, new FrameLayout.LayoutParams(size, size, Gravity.CENTER));
         card.setFocusable(true);
         card.setTag(key);
@@ -722,11 +974,14 @@ public class MainActivity extends Activity {
             showAddMenu(-1);
             return;
         } else if (SETTINGS.equals(key)) {
-            dropdown(tile(SETTINGS), SETTINGS_ITEMS, which -> {
-                if (which == 0) showWallpapers();
-                else try { startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
-                catch (Exception ignored) {}
-            });
+            showSettingsMenu();
+            return;
+        } else if (INPUTS.equals(key)) {
+            final List<TvInputInfo> inputs = hdmiInputs();
+            if (inputs.isEmpty()) return;
+            String[] names = new String[inputs.size()];
+            for (int n = 0; n < names.length; n++) names[n] = inputLabel(inputs.get(n));
+            dropdown(tile(INPUTS), names, which -> openInput(inputs.get(which).getId()));
             return;
         } else if (isInput(key)) {
             openInput(key);
@@ -1096,10 +1351,12 @@ public class MainActivity extends Activity {
 
     // Where app number i sits in the grid.
     private int gridX(int i) {
+        if (shelf) return px(SHELF_PAD) + i * (tileW + px(SHELF_GAP));
         return px(MARGIN) + (i % PER_ROW) * (tileW + px(GAP));
     }
 
     private int gridY(int i) {
+        if (shelf) return px(SHELF_PAD);
         return gridTop + (i / PER_ROW) * px(ROW_STEP);
     }
 

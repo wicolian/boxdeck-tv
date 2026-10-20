@@ -42,9 +42,12 @@ final class AgentsPanel extends LinearLayout {
     private boolean running;
     private Thread worker;
 
-    AgentsPanel(Context c, SharedPreferences prefs, int fg, int fgSoft, int fgDim, int focusFill, int radius,
+    private final int warn;
+
+    AgentsPanel(Context c, SharedPreferences prefs, int fg, int fgSoft, int fgDim, int warn, int focusFill, int radius,
                 int textPx, Typeface regular) {
         super(c);
+        this.warn = warn;
         this.prefs = prefs;
         this.fg = fg;
         this.fgSoft = fgSoft;
@@ -145,7 +148,7 @@ final class AgentsPanel extends LinearLayout {
         for (Deck.Box b : s.boxes) {
             if (out.length() > 0) out.append("\n");
             append(out, b.name + "  ", fg);
-            if (!b.ok) { append(out, "✕ offline", WAITING); continue; }
+            if (!b.ok) { append(out, "✕ offline", warn); continue; }
             String sep = "";
             if (!b.listed) {
                 append(out, b.count + " agents" + (b.error != null ? " (" + b.error + ")" : ""), fgDim);
@@ -153,11 +156,11 @@ final class AgentsPanel extends LinearLayout {
             } else {
                 int working = b.working(), waiting = b.waiting(), other = b.agents.size() - working - waiting;
                 if (working > 0) { append(out, "● " + working + " working", fg); sep = "   "; }
-                if (waiting > 0) { append(out, sep + "◐ " + waiting + " waiting", WAITING); sep = "   "; }
+                if (waiting > 0) { append(out, sep + "◐ " + waiting + " waiting", warn); sep = "   "; }
                 if (other > 0) { append(out, sep + other + " outside herdr", fgDim); sep = "   "; }
                 if (b.agents.isEmpty()) { append(out, "no agents", fgDim); sep = "   "; }
             }
-            if (b.diskFull()) append(out, sep + "disk " + b.diskPct + "%", WAITING);
+            if (b.diskFull()) append(out, sep + "disk " + b.diskPct + "%", warn);
         }
 
         out.append("\n");
@@ -166,14 +169,14 @@ final class AgentsPanel extends LinearLayout {
             StringBuilder bar = new StringBuilder();
             for (int i = 0; i < 10; i++) bar.append(i < Math.round((100 - five) / 10f) ? '█' : '░');
             append(out, "claude 5h ", fgDim);
-            append(out, bar.toString(), five < Deck.QUOTA_LOW ? WAITING : fg);
-            append(out, " " + five + "% left", five < Deck.QUOTA_LOW ? WAITING : fgSoft);
+            append(out, bar.toString(), five < Deck.QUOTA_LOW ? warn : fg);
+            append(out, " " + five + "% left", five < Deck.QUOTA_LOW ? warn : fgSoft);
         } else {
             append(out, "claude 5h -", fgDim);
         }
         if (week >= 0) {
             append(out, " · 7d ", fgDim);
-            append(out, week + "% left", week < Deck.QUOTA_LOW ? WAITING : fgSoft);
+            append(out, week + "% left", week < Deck.QUOTA_LOW ? warn : fgSoft);
         }
 
         JSONObject prs = s.github == null ? null : s.github.optJSONObject("prs");
@@ -181,7 +184,7 @@ final class AgentsPanel extends LinearLayout {
             int open = prs.optInt("open"), failing = prs.optInt("failing"), pending = prs.optInt("pending");
             out.append("\n");
             append(out, "prs " + open + " open", fgSoft);
-            if (failing > 0) append(out, " · ✕ " + failing + " failing", WAITING);
+            if (failing > 0) append(out, " · ✕ " + failing + " failing", warn);
             if (pending > 0) append(out, " · " + pending + " pending", fgDim);
             if (open > 0 && failing == 0 && pending == 0) append(out, " · ✓ all passing", fgDim);
         }

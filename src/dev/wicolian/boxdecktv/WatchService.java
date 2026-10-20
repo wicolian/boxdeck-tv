@@ -191,7 +191,9 @@ public class WatchService extends Service {
         boolean first = !seeded;
         seeded = true;
         lastSnapshot = s;
-        if (first || !screenOn) return;
+        // Alerts are off unless turned on (Settings > Alerts, or --es alerts on); the state above is
+        // still tracked, so turning them on later never floods the screen with old news.
+        if (first || !screenOn || !"on".equals(p.getString("alerts", "off"))) { welcomeDue = false; return; }
 
         List<String> lines = new ArrayList<>();
         if (welcomeDue) {

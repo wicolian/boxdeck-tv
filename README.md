@@ -8,32 +8,42 @@ Codex agents are working and which ones stopped and want you, on every machine
 
 ## What you get
 
-- **A plain home screen.** Your apps, your HDMI inputs and a clock. No ads, no rows of suggestions.
-  App logos keep their own colours, because that is how you find an app from across the room.
-- **An agents panel** next to the clock: per machine, how many agents are working and how many are
-  waiting, plus the Claude 5-hour and 7-day quota and today's cost at list price. Waiting is the only
-  figure in amber, because it is the only one you act on.
-- **Every herdr pane, full screen.** Press OK on the panel. Each pane shows its title, folder, model and
-  age, waiting first. Agents that run outside herdr have no status, so they fold
-  into one line per machine.
+- **A calm home screen.** A headline answers the one question: *does anything need me?* ("1 agent needs
+  you"). Under it are your agents as cards, waiting first, and your apps on a shelf at the bottom. No
+  ads, no suggestion rows. App logos keep their own colours, because that is how you find an app from
+  across the room.
+- **A status light on every card,** like the LEDs on a router. Amber and steady when an agent waits
+  for you. The theme's accent, slowly breathing, while it works. Nothing blinks.
+- **Omarchy themes, built in:** Tokyo Night, Catppuccin, Gruvbox, Nord, Everforest, Kanagawa, Rosé Pine,
+  Matte Black, Osaka Jade, Ristretto, plus Terminal (green phosphor) and Classic. Pick one under
+  Settings → Theme, which previews it live. Or bring your own:
+  `--es theme_custom "bg=#1a1b26,surface=#24283b,fg=#c0caf5,dim=#565f89,accent=#7aa2f7,warn=#e0af68"`.
+  Settings also has the layout (Shelf or Grid), the font (Inter or JetBrains Mono, both bundled) and
+  alerts.
+- **Fast on a slow TV.** Navigating runs at 60 fps on an Acerpure ACP75P (Google TV 14): median frame
+  10 ms, p90 11 ms, 0 janky frames. It uses 82 MB of memory, against 127 MB for the Google TV home
+  screen. To get there it uses no live blur, and it paints the background once instead of every frame.
+  The surfaces are solid colours mixed to look like glass, and the only constant motion is the
+  breathing light, at 15 fps.
+- **Every herdr pane, full screen.** Press OK on any card. Each pane shows its title, folder, model and
+  age, waiting first. Agents outside herdr have no status, so they fold into one line per machine.
 
   ![Panes](docs/panes.png)
 
-- **Toasts, only when something changes.** They show even during Netflix: a pane goes from working to
-  waiting, a machine goes offline, one of your PRs starts failing CI, a Claude quota window drops under
-  20% left, or a disk goes over 90%. Android cuts a toast at two lines, so you get the most urgent line
-  and a count of the rest. The first read after a restart only learns the state, so a reboot never
-  floods the screen.
-- **"While you were away".** Turn the TV on after 30 minutes or more and the first thing you see is
-  `While you were away: 3 finished · 1 needs you · ~$40 spent`.
-- **PR and CI line** in the panel: `prs 9 open · ✕ 1 failing · 1 pending`. boxdeck fetches it with the
-  hub's own `gh` login ([boxdeck#52](https://github.com/wicolian/boxdeck/pull/52)), so the TV never holds
-  a GitHub token. The line is hidden when the hub has no `gh`.
-- **A terminal look** (the `Terminal` wallpaper): shell prompt, a solid block cursor, monospace text and faint
-  scanlines. There are 14 other wallpapers under Settings > Wallpaper.
-- **A Matrix screensaver** with the clock and, above it, your agents (`◐ 4 waiting · ● 2 working`) and
-  usage (`claude 5h 86% left · 7d 63% left · ~$689 today`), on a dark plate so the rain never hides
-  them. It is drawn at half resolution so a slow TV keeps up.
+- **Alerts, off by default.** Turn them on under Settings → Alerts. Then a toast shows, even during
+  Netflix, when something changes:
+  - a pane goes from working to waiting
+  - a machine goes offline
+  - a PR starts failing CI
+  - a Claude quota window drops under 20%
+  - a disk goes over 90%
+
+  After 30 minutes or more with the screen off, you get a "While you were away" summary instead.
+- **PRs and CI** in the headline's second line: "12 PRs open, 2 failing CI". boxdeck fetches them with
+  the hub's own `gh` login ([boxdeck#52](https://github.com/wicolian/boxdeck/pull/52)), so the TV never
+  holds a GitHub token.
+- **A Matrix screensaver** in your theme's colours. Above the clock it shows your agents and your
+  quota.
 
   ![Screensaver](docs/screensaver.png)
 - **It stays reachable after a restart.** Google TV turns wireless debugging off at every boot, and

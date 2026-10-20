@@ -33,7 +33,8 @@ public class DeckActivity extends Activity {
     private LinearLayout list;
     private TextView stamp;
     private boolean term, running, eased;
-    private int fg, fgSoft, fgDim, fillOn;
+    private int fg, fgSoft, fgDim, fillOn, warn, accent;
+    private Theme theme;
     private Typeface regular, bold;
     private float scale;
 
@@ -41,15 +42,18 @@ public class DeckActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         SharedPreferences p = getSharedPreferences(Deck.PREFS, 0);
-        term = "Terminal".equals(p.getString("wallpaper", null));
-        fg = term ? MainActivity.PHOSPHOR : Color.WHITE;
-        fgSoft = term ? 0xC839FF7A : 0xE0FFFFFF;
-        fgDim = term ? 0x7839FF7A : 0x99FFFFFF;
-        fillOn = term ? 0x1F39FF7A : 0x38FFFFFF;
-        regular = term ? Typeface.MONOSPACE : Typeface.create("sans-serif", Typeface.NORMAL);
-        bold = term ? Typeface.create(Typeface.MONOSPACE, Typeface.BOLD) : Typeface.create("sans-serif-medium", Typeface.NORMAL);
+        theme = Theme.current(p);
+        term = theme.terminal;
+        fg = theme.fg;
+        fgSoft = theme.fgSoft();
+        fgDim = theme.fgDim();
+        fillOn = Theme.alpha(theme.accent, 0x2E);
+        warn = theme.warn;
+        accent = theme.accent;
+        regular = Theme.regular(this, p);
+        bold = Theme.bold(this, p);
         scale = getResources().getDisplayMetrics().widthPixels / 1920f;
-        getWindow().setBackgroundDrawable(new ColorDrawable(term ? 0xFF030504 : 0xFF0E0B0C));
+        getWindow().setBackgroundDrawable(new ColorDrawable(theme.classic ? 0xFF0E0B0C : theme.bg));
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
@@ -130,7 +134,7 @@ public class DeckActivity extends Activity {
             TextView sum = text(px(24), fgDim, regular);
             sum.setText(!b.ok ? "   down" : !b.listed ? "   " + b.count + " agents" + (b.error != null ? ", " + b.error : ", no read-only token for it")
                     : "   " + b.working() + " working · " + b.waiting() + " waiting");
-            if (!b.ok) sum.setTextColor(AgentsPanel.WAITING);
+            if (!b.ok) sum.setTextColor(warn);
             head.addView(sum);
             LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(-1, -2);
             hp.topMargin = list.getChildCount() == 0 ? 0 : px(40);
@@ -194,7 +198,7 @@ public class DeckActivity extends Activity {
         r.setBackground(bg);
         r.setOnFocusChangeListener((v, has) -> bg.setColor(has ? fillOn : 0));
 
-        int color = a.waiting() ? AgentsPanel.WAITING : fg;
+        int color = a.waiting() ? warn : accent;
         TextView mark = text(px(28), color, bold);
         mark.setText(a.waiting() ? "◐" : "●");
         r.addView(mark, new LinearLayout.LayoutParams(px(48), -2));
